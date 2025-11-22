@@ -127,6 +127,28 @@ h1 {
     font-weight: bold;
 }
 
+.lives-display {
+    display: flex;
+    gap: 5px;
+}
+
+.life-hex {
+    width: 15px;
+    height: 15px;
+    background-color: var(--primary-color);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    transition: all 0.3s ease;
+    box-shadow: 0 0 5px var(--primary-color);
+}
+
+.life-hex.lost {
+    background-color: transparent;
+    border: 1px solid var(--accent-color);
+    /* Magenta border for lost life */
+    box-shadow: none;
+    opacity: 0.5;
+}
+
 .icon-btn {
     background: none;
     border: 1px solid var(--primary-color);
@@ -217,6 +239,8 @@ button:hover {
     flex-grow: 1;
     width: 100%;
     height: 100%;
+    min-height: 0;
+    /* Prevent flex overflow */
     cursor: crosshair;
 }
 

@@ -383,6 +383,7 @@ class Game {
         this.targetComplexity = 0;
         this.constraints = []; // Initialize empty, set per level
         this.audio = new AudioController();
+        this.lives = 3; // Initial lives
 
         this.ui = {
             complexity: document.getElementById('complexity-score'),
@@ -394,7 +395,8 @@ class Game {
             continueBtn: document.getElementById('continue-btn'),
             restartBtn: document.getElementById('restart-btn'),
             reqList: document.getElementById('requirements-list'),
-            reqContainer: document.getElementById('requirements-container')
+            reqContainer: document.getElementById('requirements-container'),
+            livesContainer: document.getElementById('lives-container')
         };
 
         document.querySelector('h1').textContent = "Connections v1.0";
@@ -407,7 +409,9 @@ class Game {
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         this.canvas.addEventListener('click', (e) => this.handleClick(e));
 
-        if (this.ui.nextBtn) this.ui.nextBtn.addEventListener('click', () => this.startLevel(this.level + 1));
+        // Removed addEventListener for nextBtn to avoid conflicts with gameOver logic
+        // if (this.ui.nextBtn) this.ui.nextBtn.addEventListener('click', () => this.startLevel(this.level + 1));
+
         if (this.ui.startBtn) this.ui.startBtn.addEventListener('click', () => this.startGame());
 
         if (this.ui.continueBtn) {
@@ -477,10 +481,16 @@ class Game {
         this.edges = [];
         this.ui.messageArea.classList.add('hidden');
 
+        // Reset Next Button to default "Next Level" behavior
+        this.ui.nextBtn.textContent = "[ EXECUTE_NEXT_PHASE ]";
+        this.ui.nextBtn.onclick = () => this.startLevel(this.level + 1);
+
         // Generate Level
         this.generateLevel(level);
+        this.lives = 3; // Reset lives
         this.updateStats();
         this.updateRequirementsUI();
+        this.updateLivesUI();
     }
 
     generateLevel(level) {
@@ -597,6 +607,18 @@ class Game {
         this.ui.target.textContent = this.targetComplexity;
     }
 
+    updateLivesUI() {
+        this.ui.livesContainer.innerHTML = '';
+        for (let i = 0; i < 3; i++) {
+            const hex = document.createElement('div');
+            hex.className = 'life-hex';
+            if (i >= this.lives) {
+                hex.classList.add('lost');
+            }
+            this.ui.livesContainer.appendChild(hex);
+        }
+    }
+
     handleMouseMove(e) {
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
@@ -640,10 +662,29 @@ class Game {
                     console.log("Cannot remove:", validation.reason);
                     this.audio.playError();
                     this.showToast(validation.reason);
+
+                    this.lives--;
+                    this.updateLivesUI();
+
+                    if (this.lives <= 0) {
+                        this.gameOver();
+                    }
                 }
                 break;
             }
         }
+    }
+
+    gameOver() {
+        this.ui.messageArea.classList.remove('hidden');
+        document.getElementById('message-title').textContent = ">> SYSTEM_FAILURE";
+        document.getElementById('message-desc').textContent = "CRITICAL_ERROR: TOO_MANY_FAULTS";
+        this.ui.nextBtn.textContent = "[ REBOOT_SYSTEM ]";
+
+        // Set next button behavior for this state
+        this.ui.nextBtn.onclick = () => {
+            this.restartLevel();
+        };
     }
 
     showToast(message) {
