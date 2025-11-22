@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYSTEM.CONNECTIONS_</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="scanline"></div>
+    <div class="terminal-container">
+        <header>
+            <h1>> SYSTEM.CONNECTIONS_</h1>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="label">CMPLX:</span>
+                    <span id="complexity-score" class="value">000</span>
+                </div>
+                <div class="stat-item">
+                    <span class="label">TRGT:</span>
+                    <span id="target-score" class="value">000</span>
+                </div>
+                <button id="restart-btn" class="icon-btn" title="REBOOT_LEVEL">
+                    [R]
+                </button>
+            </div>
+        </header>
+
+        <div id="requirements-container">
+            <h3>> REQUIRED_PROTOCOLS:</h3>
+            <ul id="requirements-list">
+                <!-- Populated by JS -->
+            </ul>
+        </div>
+
+        <div id="start-screen" class="overlay">
+            <h1>> INITIALIZE_SEQUENCE</h1>
+            <p>OPTIMIZE_NETWORK_TOPOLOGY. MAINTAIN_SIGNAL_FLOW.</p>
+            <div class="button-group">
+                <button id="continue-btn" class="hidden">[ RESUME_SESSION ]</button>
+                <button id="start-btn">[ INITIATE_NEW_GAME ]</button>
+            </div>
+        </div>
+
+        <div id="message-area" class="hidden overlay-content">
+            <h2 id="message-title">>> SEQUENCE_COMPLETE</h2>
+            <p id="message-desc">CONNECTION_ESTABLISHED</p>
+            <button id="next-level-btn">[ EXECUTE_NEXT_PHASE ]</button>
+        </div>
+
+        <div id="toast-container"></div>
+
+        <canvas id="game-canvas"></canvas>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+
+</html>
