@@ -300,32 +300,43 @@ class AudioController {
 
         this.ambienceStarted = true;
 
-        const osc1 = this.ctx.createOscillator();
-        const osc2 = this.ctx.createOscillator();
+        // C Minor Chord (C2, Eb2, G2)
+        const freqs = [65.41, 77.78, 98.00];
+        const oscillators = [];
         const gain = this.ctx.createGain();
         const filter = this.ctx.createBiquadFilter();
+        const lfo = this.ctx.createOscillator();
+        const lfoGain = this.ctx.createGain();
 
-        // Drone 1
-        osc1.type = 'triangle';
-        osc1.frequency.value = 110; // A2
+        // Master Gain for Ambience
+        gain.gain.value = 0.05; // Low volume background
 
-        // Drone 2 (Detuned)
-        osc2.type = 'sine';
-        osc2.frequency.value = 111; // Detuned
-
-        // Filter for darker sound
+        // Filter Setup
         filter.type = 'lowpass';
-        filter.frequency.value = 300;
+        filter.frequency.value = 200; // Base cutoff
+        filter.Q.value = 1;
 
-        osc1.connect(filter);
-        osc2.connect(filter);
+        // LFO Setup (Modulates Filter Frequency)
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.1; // Slow breathing (0.1 Hz)
+        lfoGain.gain.value = 100; // Modulation depth (+/- 100Hz)
+
+        lfo.connect(lfoGain);
+        lfoGain.connect(filter.frequency);
+        lfo.start();
+
+        // Create Oscillators
+        freqs.forEach(freq => {
+            const osc = this.ctx.createOscillator();
+            osc.type = 'sawtooth'; // Richer harmonic content
+            osc.frequency.value = freq;
+            osc.connect(filter);
+            osc.start();
+            oscillators.push(osc);
+        });
+
         filter.connect(gain);
         gain.connect(this.ctx.destination);
-
-        gain.gain.value = 0.1; // Increased volume
-
-        osc1.start();
-        osc2.start();
     }
 
     playTone() {
