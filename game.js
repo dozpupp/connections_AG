@@ -408,7 +408,10 @@ class Game {
 
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         this.canvas.addEventListener('click', (e) => this.handleClick(e));
-        this.canvas.addEventListener('touchstart', (e) => this.handleTouch(e), { passive: false });
+
+        this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e), { passive: false });
+        this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e), { passive: false });
+        this.canvas.addEventListener('touchend', (e) => this.handleTouchEnd(e), { passive: false });
 
         // Removed addEventListener for nextBtn to avoid conflicts with gameOver logic
         // if (this.ui.nextBtn) this.ui.nextBtn.addEventListener('click', () => this.startLevel(this.level + 1));
@@ -624,7 +627,53 @@ class Game {
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
+        this.updateHoverState(x, y);
+    }
 
+    handleClick(e) {
+        // Ensure audio context is running on first interaction
+        if (this.audio && !this.audio.ambienceStarted) {
+            this.audio.startAmbience();
+        }
+
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        this.attemptInteraction(x, y);
+    }
+
+    handleTouchStart(e) {
+        e.preventDefault();
+        if (this.audio && !this.audio.ambienceStarted) {
+            this.audio.startAmbience();
+        }
+        this.handleTouchMove(e);
+    }
+
+    handleTouchMove(e) {
+        e.preventDefault();
+        const rect = this.canvas.getBoundingClientRect();
+        const touch = e.touches[0];
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+        this.updateHoverState(x, y);
+    }
+
+    handleTouchEnd(e) {
+        e.preventDefault();
+        const rect = this.canvas.getBoundingClientRect();
+        const touch = e.changedTouches[0];
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+
+        // Clear hover state on release
+        this.edges.forEach(edge => edge.hovered = false);
+        this.canvas.style.cursor = 'default';
+
+        this.attemptInteraction(x, y);
+    }
+
+    updateHoverState(x, y) {
         let hovered = false;
         for (const edge of this.edges) {
             if (edge.isPointNearLine(x, y)) {
@@ -640,27 +689,7 @@ class Game {
         }
     }
 
-    handleTouch(e) {
-        e.preventDefault(); // Prevent scrolling
-        const rect = this.canvas.getBoundingClientRect();
-        const touch = e.touches[0];
-        const x = touch.clientX - rect.left;
-        const y = touch.clientY - rect.top;
-
-        // Reuse click logic
-        this.handleClick({ clientX: touch.clientX, clientY: touch.clientY });
-    }
-
-    handleClick(e) {
-        // Ensure audio context is running on first interaction
-        if (this.audio && !this.audio.ambienceStarted) {
-            this.audio.startAmbience();
-        }
-
-        const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-
+    attemptInteraction(x, y) {
         for (const edge of this.edges) {
             if (edge.active && edge.isPointNearLine(x, y)) {
                 const validation = this.canRemoveEdge(edge);
