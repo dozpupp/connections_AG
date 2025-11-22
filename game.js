@@ -408,6 +408,7 @@ class Game {
 
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         this.canvas.addEventListener('click', (e) => this.handleClick(e));
+        this.canvas.addEventListener('touchstart', (e) => this.handleTouch(e), { passive: false });
 
         // Removed addEventListener for nextBtn to avoid conflicts with gameOver logic
         // if (this.ui.nextBtn) this.ui.nextBtn.addEventListener('click', () => this.startLevel(this.level + 1));
@@ -637,6 +638,17 @@ class Game {
         if (!hovered) {
             this.canvas.style.cursor = 'default';
         }
+    }
+
+    handleTouch(e) {
+        e.preventDefault(); // Prevent scrolling
+        const rect = this.canvas.getBoundingClientRect();
+        const touch = e.touches[0];
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+
+        // Reuse click logic
+        this.handleClick({ clientX: touch.clientX, clientY: touch.clientY });
     }
 
     handleClick(e) {
