@@ -1,282 +1,4 @@
 
-class Node {
-    constructor(x, y, id) {
-        this.x = x;
-        this.y = y;
-        this.id = id;
-        this.size = 30; // Size of the square
-        this.color = '#00ff00'; // Hacker Green
-    }
-
-    draw(ctx) {
-        ctx.save();
-        ctx.translate(this.x, this.y);
-
-        // Glow effect
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = this.color;
-
-        // Draw Square Node
-        ctx.fillStyle = '#000000';
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 2;
-        ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size);
-        ctx.strokeRect(-this.size / 2, -this.size / 2, this.size, this.size);
-
-        // Draw ID
-        ctx.fillStyle = this.color;
-        ctx.font = '16px "VT323", monospace';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(this.id, 0, 0);
-
-        ctx.restore();
-    }
-}
-
-class Edge {
-    constructor(nodeA, nodeB) {
-        this.nodeA = nodeA;
-        this.nodeB = nodeB;
-        this.active = true;
-        this.hovered = false;
-    }
-
-    draw(ctx) {
-        if (!this.active) return;
-
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(this.nodeA.x, this.nodeA.y);
-        ctx.lineTo(this.nodeB.x, this.nodeB.y);
-
-        // Neon Line Style
-        ctx.strokeStyle = this.hovered ? '#ff00ff' : '#00ffff'; // Magenta on hover, Cyan otherwise
-        ctx.lineWidth = this.hovered ? 3 : 1;
-        ctx.shadowBlur = this.hovered ? 15 : 5;
-        ctx.shadowColor = ctx.strokeStyle;
-
-        ctx.stroke();
-        ctx.restore();
-    }
-
-    isPointNearLine(x, y) {
-        if (!this.active) return false;
-
-        const x1 = this.nodeA.x;
-        const y1 = this.nodeA.y;
-        const x2 = this.nodeB.x;
-        const y2 = this.nodeB.y;
-
-        // Distance from point to line segment
-        const A = x - x1;
-        const B = y - y1;
-        const C = x2 - x1;
-        const D = y2 - y1;
-
-        const dot = A * C + B * D;
-        const len_sq = C * C + D * D;
-        let param = -1;
-        if (len_sq != 0) // in case of 0 length line
-            param = dot / len_sq;
-
-        let xx, yy;
-
-        if (param < 0) {
-            xx = x1;
-            yy = y1;
-        }
-        else if (param > 1) {
-            xx = x2;
-            yy = y2;
-        }
-        else {
-            xx = x1 + param * C;
-            yy = y1 + param * D;
-        }
-
-        const dx = x - xx;
-        const dy = y - yy;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        return dist < 10; // Hit tolerance
-    }
-}
-
-class Constraint {
-    validate(game, edgeToRemove) {
-        return { valid: true };
-    }
-}
-
-class ConnectivityConstraint extends Constraint {
-    validate(game, edgeToRemove) {
-        // 1. Build adjacency list from ACTIVE edges, excluding the one to remove
-        const adj = new Map();
-        game.nodes.forEach(n => adj.set(n, []));
-
-        for (const edge of game.edges) {
-            if (edge.active && edge !== edgeToRemove) {
-                adj.get(edge.nodeA).push(edge.nodeB);
-                adj.get(edge.nodeB).push(edge.nodeA);
-            }
-        }
-
-        // 2. BFS from first node
-        const startNode = game.nodes[0];
-        const visited = new Set();
-        const queue = [startNode];
-        visited.add(startNode);
-
-        while (queue.length > 0) {
-            const curr = queue.shift();
-            const neighbors = adj.get(curr);
-            for (const neighbor of neighbors) {
-                if (!visited.has(neighbor)) {
-                    visited.add(neighbor);
-                    queue.push(neighbor);
-                }
-            }
-        }
-
-        // 3. If visited count == nodes count, it's connected
-        if (visited.size === game.nodes.length) {
-            return { valid: true };
-        } else {
-            return { valid: false, reason: "Graph must remain connected" };
-        }
-    }
-}
-
-class MinDegreeConstraint extends Constraint {
-    constructor(minDegree = 1) {
-        super();
-        this.minDegree = minDegree;
-    }
-
-    validate(game, edgeToRemove) {
-        // Check if removing this edge would leave any node with < minDegree edges
-        // We only need to check the two endpoints of the edge being removed
-
-        const checkNode = (node) => {
-            let degree = 0;
-            for (const edge of game.edges) {
-                if (edge.active && edge !== edgeToRemove) {
-                    if (edge.nodeA === node || edge.nodeB === node) {
-                        degree++;
-                    }
-                }
-            }
-            return degree;
-        };
-
-        const degreeA = checkNode(edgeToRemove.nodeA);
-        const degreeB = checkNode(edgeToRemove.nodeB);
-
-        if (degreeA < this.minDegree || degreeB < this.minDegree) {
-            return { valid: false, reason: `Nodes must have at least ${this.minDegree} connection(s)` };
-        }
-
-        return { valid: true };
-    }
-}
-
-class SpecificConnectionConstraint extends Constraint {
-    constructor(requiredPairs) {
-        super();
-        this.requiredPairs = requiredPairs; // Array of [id1, id2]
-    }
-
-    validate(game, edgeToRemove) {
-        const idA = edgeToRemove.nodeA.id;
-        const idB = edgeToRemove.nodeB.id;
-
-        for (const pair of this.requiredPairs) {
-            if ((pair[0] === idA && pair[1] === idB) || (pair[0] === idB && pair[1] === idA)) {
-                return { valid: false, reason: `Must keep connection between ${idA} and ${idB}` };
-            }
-        }
-        return { valid: true };
-    }
-}
-
-class MaxDistanceConstraint extends Constraint {
-    constructor(nodeAId, nodeBId, maxHops) {
-        super();
-        this.nodeAId = nodeAId;
-        this.nodeBId = nodeBId;
-        this.maxHops = maxHops;
-    }
-
-    validate(game, edgeToRemove) {
-        // 1. Build adjacency list from ACTIVE edges, excluding the one to remove
-        const adj = new Map();
-        game.nodes.forEach(n => adj.set(n.id, []));
-
-        for (const edge of game.edges) {
-            if (edge.active && edge !== edgeToRemove) {
-                adj.get(edge.nodeA.id).push(edge.nodeB.id);
-                adj.get(edge.nodeB.id).push(edge.nodeA.id);
-            }
-        }
-
-        // 2. BFS to find distance between nodeA and nodeB
-        const queue = [[this.nodeAId, 0]]; // [id, distance]
-        const visited = new Set();
-        visited.add(this.nodeAId);
-
-        while (queue.length > 0) {
-            const [currId, dist] = queue.shift();
-
-            if (currId === this.nodeBId) {
-                if (dist <= this.maxHops) {
-                    return { valid: true };
-                } else {
-                    return { valid: false, reason: `Distance between ${this.nodeAId} and ${this.nodeBId} must be ≤ ${this.maxHops} hops` };
-                }
-            }
-
-            if (dist < this.maxHops) {
-                const neighbors = adj.get(currId);
-                if (neighbors) {
-                    for (const neighborId of neighbors) {
-                        if (!visited.has(neighborId)) {
-                            visited.add(neighborId);
-                            queue.push([neighborId, dist + 1]);
-                        }
-                    }
-                }
-            }
-        }
-
-        return { valid: false, reason: `Nodes ${this.nodeAId} and ${this.nodeBId} must remain connected` };
-    }
-}
-
-class HubConstraint extends Constraint {
-    constructor(nodeId, minConnections) {
-        super();
-        this.nodeId = nodeId;
-        this.minConnections = minConnections;
-    }
-
-    validate(game, edgeToRemove) {
-        let connections = 0;
-        for (const edge of game.edges) {
-            if (edge.active && edge !== edgeToRemove) {
-                if (edge.nodeA.id === this.nodeId || edge.nodeB.id === this.nodeId) {
-                    connections++;
-                }
-            }
-        }
-
-        if (connections < this.minConnections) {
-            return { valid: false, reason: `Node ${this.nodeId} must have at least ${this.minConnections} connections` };
-        }
-        return { valid: true };
-    }
-}
-
 class AudioController {
     constructor() {
         this.ctx = null;
@@ -384,6 +106,289 @@ class AudioController {
     }
 }
 
+class Node {
+    constructor(x, y, id) {
+        this.x = x;
+        this.y = y;
+        this.id = id;
+        this.size = 30; // Size of the square
+        this.color = '#00ff00'; // Hacker Green
+    }
+
+    draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+
+        // Glow effect
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+
+        // Draw Square Node
+        ctx.fillStyle = '#000000';
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 2;
+        ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size);
+        ctx.strokeRect(-this.size / 2, -this.size / 2, this.size, this.size);
+
+        // Draw ID
+        ctx.fillStyle = this.color;
+        ctx.font = '16px "VT323", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.id, 0, 0);
+
+        ctx.restore();
+    }
+}
+
+class Edge {
+    constructor(nodeA, nodeB) {
+        this.nodeA = nodeA;
+        this.nodeB = nodeB;
+        this.active = true;
+        this.hovered = false;
+    }
+
+    draw(ctx) {
+        if (!this.active) return;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(this.nodeA.x, this.nodeA.y);
+        ctx.lineTo(this.nodeB.x, this.nodeB.y);
+
+        // Neon Line Style
+        ctx.strokeStyle = this.hovered ? '#ff00ff' : '#00ffff'; // Magenta on hover, Cyan otherwise
+        ctx.lineWidth = this.hovered ? 3 : 1;
+        ctx.shadowBlur = this.hovered ? 15 : 5;
+        ctx.shadowColor = ctx.strokeStyle;
+
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    isPointNearLine(x, y) {
+        if (!this.active) return false;
+
+        const x1 = this.nodeA.x;
+        const y1 = this.nodeA.y;
+        const x2 = this.nodeB.x;
+        const y2 = this.nodeB.y;
+
+        // Distance from point to line segment
+        const A = x - x1;
+        const B = y - y1;
+        const C = x2 - x1;
+        const D = y2 - y1;
+
+        const dot = A * C + B * D;
+        const len_sq = C * C + D * D;
+        let param = -1;
+        if (len_sq != 0) // in case of 0 length line
+            param = dot / len_sq;
+
+        let xx, yy;
+
+        if (param < 0) {
+            xx = x1;
+            yy = y1;
+        }
+        else if (param > 1) {
+            xx = x2;
+            yy = y2;
+        }
+        else {
+            xx = x1 + param * C;
+            yy = y1 + param * D;
+        }
+
+        const dx = x - xx;
+        const dy = y - yy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        return dist < 20; // Hit tolerance
+    }
+}
+
+class Constraint {
+    validate(nodes, edges, edgeToRemove) {
+        return { valid: true };
+    }
+}
+
+class ConnectivityConstraint extends Constraint {
+    validate(nodes, edges, edgeToRemove) {
+        const adj = new Map();
+        nodes.forEach(n => adj.set(n.id, []));
+
+        for (const edge of edges) {
+            if (edge.active && edge !== edgeToRemove) {
+                adj.get(edge.nodeA.id).push(edge.nodeB.id);
+                adj.get(edge.nodeB.id).push(edge.nodeA.id);
+            }
+        }
+
+        const startNodeId = nodes[0].id;
+        const visited = new Set();
+        const queue = [startNodeId];
+        visited.add(startNodeId);
+
+        while (queue.length > 0) {
+            const currId = queue.shift();
+            const neighbors = adj.get(currId);
+            if (neighbors) {
+                for (const neighborId of neighbors) {
+                    if (!visited.has(neighborId)) {
+                        visited.add(neighborId);
+                        queue.push(neighborId);
+                    }
+                }
+            }
+        }
+
+        if (visited.size === nodes.length) {
+            return { valid: true };
+        } else {
+            return { valid: false, reason: "Graph must remain connected" };
+        }
+    }
+}
+
+class MinDegreeConstraint extends Constraint {
+    constructor(minDegree = 1) {
+        super();
+        this.minDegree = minDegree;
+    }
+
+    validate(nodes, edges, edgeToRemove) {
+        const checkNode = (nodeId) => {
+            let degree = 0;
+            for (const edge of edges) {
+                if (edge.active && edge !== edgeToRemove) {
+                    if (edge.nodeA.id === nodeId || edge.nodeB.id === nodeId) {
+                        degree++;
+                    }
+                }
+            }
+            return degree;
+        };
+
+        if (edgeToRemove) {
+            const degreeA = checkNode(edgeToRemove.nodeA.id);
+            const degreeB = checkNode(edgeToRemove.nodeB.id);
+            if (degreeA < this.minDegree || degreeB < this.minDegree) {
+                return { valid: false, reason: `Nodes must have at least ${this.minDegree} connection(s)` };
+            }
+        } else {
+            for (const node of nodes) {
+                if (checkNode(node.id) < this.minDegree) {
+                    return { valid: false, reason: `All nodes must have at least ${this.minDegree} connection(s)` };
+                }
+            }
+        }
+
+        return { valid: true };
+    }
+}
+
+class SpecificConnectionConstraint extends Constraint {
+    constructor(requiredPairs) {
+        super();
+        this.requiredPairs = requiredPairs; // Array of [id1, id2]
+    }
+
+    validate(nodes, edges, edgeToRemove) {
+        if (!edgeToRemove) {
+            return { valid: true };
+        }
+
+        const idA = edgeToRemove.nodeA.id;
+        const idB = edgeToRemove.nodeB.id;
+
+        for (const pair of this.requiredPairs) {
+            if ((pair[0] === idA && pair[1] === idB) || (pair[0] === idB && pair[1] === idA)) {
+                return { valid: false, reason: `Must keep connection between ${idA} and ${idB}` };
+            }
+        }
+        return { valid: true };
+    }
+}
+
+class MaxDistanceConstraint extends Constraint {
+    constructor(nodeAId, nodeBId, maxHops) {
+        super();
+        this.nodeAId = nodeAId;
+        this.nodeBId = nodeBId;
+        this.maxHops = maxHops;
+    }
+
+    validate(nodes, edges, edgeToRemove) {
+        const adj = new Map();
+        nodes.forEach(n => adj.set(n.id, []));
+
+        for (const edge of edges) {
+            if (edge.active && edge !== edgeToRemove) {
+                adj.get(edge.nodeA.id).push(edge.nodeB.id);
+                adj.get(edge.nodeB.id).push(edge.nodeA.id);
+            }
+        }
+
+        const queue = [[this.nodeAId, 0]];
+        const visited = new Set();
+        visited.add(this.nodeAId);
+
+        while (queue.length > 0) {
+            const [currId, dist] = queue.shift();
+
+            if (currId === this.nodeBId) {
+                if (dist <= this.maxHops) {
+                    return { valid: true };
+                } else {
+                    return { valid: false, reason: `Distance between ${this.nodeAId} and ${this.nodeBId} must be ≤ ${this.maxHops} hops` };
+                }
+            }
+
+            if (dist < this.maxHops) {
+                const neighbors = adj.get(currId);
+                if (neighbors) {
+                    for (const neighborId of neighbors) {
+                        if (!visited.has(neighborId)) {
+                            visited.add(neighborId);
+                            queue.push([neighborId, dist + 1]);
+                        }
+                    }
+                }
+            }
+        }
+
+        return { valid: false, reason: `Nodes ${this.nodeAId} and ${this.nodeBId} must remain connected` };
+    }
+}
+
+class HubConstraint extends Constraint {
+    constructor(nodeId, minConnections) {
+        super();
+        this.nodeId = nodeId;
+        this.minConnections = minConnections;
+    }
+
+    validate(nodes, edges, edgeToRemove) {
+        let connections = 0;
+        for (const edge of edges) {
+            if (edge.active && edge !== edgeToRemove) {
+                if (edge.nodeA.id === this.nodeId || edge.nodeB.id === this.nodeId) {
+                    connections++;
+                }
+            }
+        }
+
+        if (connections < this.minConnections) {
+            return { valid: false, reason: `Node ${this.nodeId} must have at least ${this.minConnections} connections` };
+        }
+        return { valid: true };
+    }
+}
+
 class Game {
     constructor() {
         this.canvas = document.getElementById('game-canvas');
@@ -392,9 +397,9 @@ class Game {
         this.edges = [];
         this.complexity = 0;
         this.targetComplexity = 0;
-        this.constraints = []; // Initialize empty, set per level
+        this.constraints = [];
+        this.lives = 3;
         this.audio = new AudioController();
-        this.lives = 3; // Initial lives
 
         this.ui = {
             complexity: document.getElementById('complexity-score'),
@@ -406,11 +411,12 @@ class Game {
             continueBtn: document.getElementById('continue-btn'),
             restartBtn: document.getElementById('restart-btn'),
             reqList: document.getElementById('requirements-list'),
+            reqList: document.getElementById('requirements-list'),
             reqContainer: document.getElementById('requirements-container'),
             livesContainer: document.getElementById('lives-container')
         };
 
-        document.querySelector('h1').textContent = "Connections v1.0";
+        document.querySelector('h1').textContent = "Connections v1.1";
 
         this.level = 1;
 
@@ -420,37 +426,18 @@ class Game {
         this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
         this.canvas.addEventListener('click', (e) => this.handleClick(e));
 
-        this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e), { passive: false });
-        this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e), { passive: false });
-        this.canvas.addEventListener('touchend', (e) => this.handleTouchEnd(e), { passive: false });
-
-        // Removed addEventListener for nextBtn to avoid conflicts with gameOver logic
-        // if (this.ui.nextBtn) this.ui.nextBtn.addEventListener('click', () => this.startLevel(this.level + 1));
-
+        if (this.ui.nextBtn) this.ui.nextBtn.addEventListener('click', () => this.startLevel(this.level + 1));
         if (this.ui.startBtn) this.ui.startBtn.addEventListener('click', () => this.startGame());
-
-        if (this.ui.continueBtn) {
-            this.ui.continueBtn.addEventListener('click', () => this.continueGame());
-        } else {
-            console.error("Continue button not found");
-        }
-
-        if (this.ui.restartBtn) {
-            this.ui.restartBtn.addEventListener('click', () => this.restartLevel());
-        } else {
-            console.error("Restart button not found");
-        }
+        if (this.ui.continueBtn) this.ui.continueBtn.addEventListener('click', () => this.continueGame());
+        if (this.ui.restartBtn) this.ui.restartBtn.addEventListener('click', () => this.restartLevel());
 
         this.checkSave();
-
-        // Initial render (empty background)
         this.loop();
     }
 
     checkSave() {
         try {
             const savedLevel = localStorage.getItem('connections_level');
-            console.log("Saved level:", savedLevel);
             if (savedLevel && parseInt(savedLevel) > 1) {
                 if (this.ui.continueBtn) {
                     this.ui.continueBtn.classList.remove('hidden');
@@ -494,27 +481,23 @@ class Game {
 
         this.nodes = [];
         this.edges = [];
+        this.lives = 3;
         this.ui.messageArea.classList.add('hidden');
 
-        // Reset Next Button to default "Next Level" behavior
-        this.ui.nextBtn.textContent = "[ EXECUTE_NEXT_PHASE ]";
-        this.ui.nextBtn.onclick = () => this.startLevel(this.level + 1);
-
-        // Generate Level
         this.generateLevel(level);
-        this.lives = 3; // Reset lives
         this.updateStats();
-        this.updateRequirementsUI();
+        this.updateStats();
         this.updateLivesUI();
+        this.updateRequirementsUI();
     }
 
     generateLevel(level) {
-        const nodeCount = level + 3; // Increase nodes slightly faster
+        const nodeCount = level + 3;
         const centerX = this.canvas.width / 2;
         const centerY = this.canvas.height / 2;
         const radius = Math.min(this.canvas.width, this.canvas.height) * 0.3;
 
-        // Create Nodes
+        // 1. Create Nodes
         for (let i = 0; i < nodeCount; i++) {
             const angle = (i / nodeCount) * Math.PI * 2;
             const x = centerX + Math.cos(angle) * radius;
@@ -522,68 +505,198 @@ class Game {
             this.nodes.push(new Node(x, y, i + 1));
         }
 
-        // Connect everyone to everyone (Complete Graph)
-        for (let i = 0; i < this.nodes.length; i++) {
-            for (let j = i + 1; j < this.nodes.length; j++) {
-                this.edges.push(new Edge(this.nodes[i], this.nodes[j]));
-            }
-        }
+        // 2. Generate Constraints
+        this.constraints = this.generateConstraints(level, this.nodes);
 
-        // Define Constraints
-        this.constraints = [
+        // 3. Generate Solution (Minimal valid graph)
+        const solutionEdges = this.generateSolution(this.nodes, this.constraints);
+
+        // 4. Calculate Target Complexity
+        this.targetComplexity = solutionEdges.length;
+
+        // 5. Generate Initial Game Graph (Solution + Noise)
+        this.edges = this.addNoise(this.nodes, solutionEdges, level);
+    }
+
+    generateConstraints(level, nodes) {
+        const constraints = [
             new ConnectivityConstraint(),
             new MinDegreeConstraint(1)
         ];
 
-        // Level 2+: Specific Constraints
+        const nodeCount = nodes.length;
+
+        // Level 2+: Specific Connections
         if (level >= 2) {
             const requiredPairs = [];
             const numConstraints = Math.floor(level / 2);
-
             for (let k = 0; k < numConstraints; k++) {
                 const id1 = Math.floor(Math.random() * nodeCount) + 1;
                 let id2 = Math.floor(Math.random() * nodeCount) + 1;
-                while (id1 === id2) {
-                    id2 = Math.floor(Math.random() * nodeCount) + 1;
-                }
+                while (id1 === id2) id2 = Math.floor(Math.random() * nodeCount) + 1;
+
                 const exists = requiredPairs.some(p => (p[0] === id1 && p[1] === id2) || (p[0] === id2 && p[1] === id1));
-                if (!exists) {
-                    requiredPairs.push([id1, id2]);
-                }
+                if (!exists) requiredPairs.push([id1, id2]);
             }
-            if (requiredPairs.length > 0) {
-                this.constraints.push(new SpecificConnectionConstraint(requiredPairs));
-            }
+            if (requiredPairs.length > 0) constraints.push(new SpecificConnectionConstraint(requiredPairs));
         }
 
-        // Level 3+: Hub Constraints
+        // Level 3+: Hubs
         if (level >= 3) {
             const hubNodeId = Math.floor(Math.random() * nodeCount) + 1;
-            const minConnections = 3; // Hub needs at least 3 connections
-            this.constraints.push(new HubConstraint(hubNodeId, minConnections));
-            // Color the hub differently?
-            const hubNode = this.nodes.find(n => n.id === hubNodeId);
-            if (hubNode) hubNode.color = '#ffaa00'; // Neon Orange
+            const minConnections = 3;
+            constraints.push(new HubConstraint(hubNodeId, minConnections));
+            const hubNode = nodes.find(n => n.id === hubNodeId);
+            if (hubNode) hubNode.color = '#ff00ff'; // Highlight hub
         }
 
-        // Level 4+: Max Distance Constraints
+        // Level 4+: Max Distance
         if (level >= 4) {
             const id1 = Math.floor(Math.random() * nodeCount) + 1;
             let id2 = Math.floor(Math.random() * nodeCount) + 1;
             while (id1 === id2) id2 = Math.floor(Math.random() * nodeCount) + 1;
-
             const maxHops = 2;
-            this.constraints.push(new MaxDistanceConstraint(id1, id2, maxHops));
+            constraints.push(new MaxDistanceConstraint(id1, id2, maxHops));
         }
 
-        this.targetComplexity = this.nodes.length - 1;
+        return constraints;
+    }
+
+    generateSolution(nodes, constraints) {
+        // Start with a Spanning Tree to ensure connectivity
+        let edges = [];
+        const unvisited = [...nodes];
+        const visited = [unvisited.shift()];
+
+        while (unvisited.length > 0) {
+            const u = visited[Math.floor(Math.random() * visited.length)];
+            const vIndex = Math.floor(Math.random() * unvisited.length);
+            const v = unvisited[vIndex];
+
+            edges.push(new Edge(u, v));
+
+            visited.push(v);
+            unvisited.splice(vIndex, 1);
+        }
+
+        // Satisfy Specific Connections
+        const specific = constraints.find(c => c instanceof SpecificConnectionConstraint);
+        if (specific) {
+            for (const pair of specific.requiredPairs) {
+                const u = nodes.find(n => n.id === pair[0]);
+                const v = nodes.find(n => n.id === pair[1]);
+                // Check if edge exists
+                if (!edges.some(e => (e.nodeA === u && e.nodeB === v) || (e.nodeA === v && e.nodeB === u))) {
+                    edges.push(new Edge(u, v));
+                }
+            }
+        }
+
+        // Satisfy Hubs (Add random edges to hub until satisfied)
+        const hubs = constraints.filter(c => c instanceof HubConstraint);
+        for (const hub of hubs) {
+            const u = nodes.find(n => n.id === hub.nodeId);
+            let currentDegree = edges.filter(e => e.nodeA === u || e.nodeB === u).length;
+
+            while (currentDegree < hub.minConnections) {
+                // Find a node not connected to u
+                const candidates = nodes.filter(n => n !== u && !edges.some(e => (e.nodeA === u && e.nodeB === n) || (e.nodeA === n && e.nodeB === u)));
+                if (candidates.length === 0) break;
+
+                const v = candidates[Math.floor(Math.random() * candidates.length)];
+                edges.push(new Edge(u, v));
+                currentDegree++;
+            }
+        }
+
+        // Satisfy Max Distance
+        const dists = constraints.filter(c => c instanceof MaxDistanceConstraint);
+        for (const d of dists) {
+            const validation = d.validate(nodes, edges, null);
+            if (!validation.valid) {
+                const u = nodes.find(n => n.id === d.nodeAId);
+                const v = nodes.find(n => n.id === d.nodeBId);
+                if (!edges.some(e => (e.nodeA === u && e.nodeB === v) || (e.nodeA === v && e.nodeB === u))) {
+                    edges.push(new Edge(u, v));
+                }
+            }
+        }
+
+        return this.pruneGraph(nodes, edges, constraints);
+    }
+
+    pruneGraph(nodes, edges, constraints) {
+        let currentEdges = [...edges];
+        // Shuffle to get varied solutions
+        for (let i = currentEdges.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [currentEdges[i], currentEdges[j]] = [currentEdges[j], currentEdges[i]];
+        }
+
+        for (let i = currentEdges.length - 1; i >= 0; i--) {
+            const edgeToRemove = currentEdges[i];
+            // Check if valid without this edge
+            let isValid = true;
+            for (const constraint of constraints) {
+                const result = constraint.validate(nodes, currentEdges, edgeToRemove);
+                if (!result.valid) {
+                    isValid = false;
+                    break;
+                }
+            }
+
+            if (isValid) {
+                currentEdges.splice(i, 1);
+            }
+        }
+
+        return currentEdges;
+    }
+
+    addNoise(nodes, solutionEdges, level) {
+        let edges = [...solutionEdges];
+        // Add random edges to create the puzzle
+
+        let noiseCount;
+        if (level === 1) {
+            // Level 1: Keep it relatively simple but populated
+            noiseCount = Math.floor(nodes.length * 1.5);
+        } else {
+            // Level 2+: Reduce density to avoid complete graphs
+            // Use a lower multiplier and add a bit based on level
+            noiseCount = Math.floor(nodes.length * 1.0) + Math.floor(level * 0.5);
+
+            // Cap total edges to ensure graph isn't too dense (e.g., max 70% of complete graph)
+            const maxPossibleEdges = (nodes.length * (nodes.length - 1)) / 2;
+            const currentCount = edges.length;
+            const maxAllowed = Math.floor(maxPossibleEdges * 0.7);
+
+            if (currentCount + noiseCount > maxAllowed) {
+                noiseCount = Math.max(0, maxAllowed - currentCount);
+            }
+        }
+
+        let attempts = 0;
+        while (edges.length < solutionEdges.length + noiseCount && attempts < 1000) {
+            attempts++;
+            const u = nodes[Math.floor(Math.random() * nodes.length)];
+            const v = nodes[Math.floor(Math.random() * nodes.length)];
+
+            if (u === v) continue;
+
+            const exists = edges.some(e => (e.nodeA === u && e.nodeB === v) || (e.nodeA === v && e.nodeB === u));
+            if (!exists) {
+                edges.push(new Edge(u, v));
+            }
+        }
+
+        return edges;
     }
 
     updateRequirementsUI() {
         this.ui.reqList.innerHTML = '';
         let hasReqs = false;
 
-        // Specific Connections
         const specific = this.constraints.find(c => c instanceof SpecificConnectionConstraint);
         if (specific) {
             specific.requiredPairs.forEach(pair => {
@@ -594,17 +707,15 @@ class Game {
             });
         }
 
-        // Hubs
         const hubs = this.constraints.filter(c => c instanceof HubConstraint);
         hubs.forEach(hub => {
             const li = document.createElement('li');
             li.textContent = `Node ${hub.nodeId}: Min ${hub.minConnections} links`;
-            li.style.color = '#fcd34d'; // Match hub color
+            li.style.color = '#ff00ff';
             this.ui.reqList.appendChild(li);
             hasReqs = true;
         });
 
-        // Max Distance
         const dists = this.constraints.filter(c => c instanceof MaxDistanceConstraint);
         dists.forEach(d => {
             const li = document.createElement('li');
@@ -622,69 +733,13 @@ class Game {
         this.ui.target.textContent = this.targetComplexity;
     }
 
-    updateLivesUI() {
-        this.ui.livesContainer.innerHTML = '';
-        for (let i = 0; i < 3; i++) {
-            const hex = document.createElement('div');
-            hex.className = 'life-hex';
-            if (i >= this.lives) {
-                hex.classList.add('lost');
-            }
-            this.ui.livesContainer.appendChild(hex);
-        }
-    }
-
     handleMouseMove(e) {
         const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        this.updateHoverState(x, y);
-    }
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
 
-    handleClick(e) {
-        // Ensure audio context is running on first interaction
-        if (this.audio && !this.audio.ambienceStarted) {
-            this.audio.startAmbience();
-        }
-
-        const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        this.attemptInteraction(x, y);
-    }
-
-    handleTouchStart(e) {
-        e.preventDefault();
-        if (this.audio && !this.audio.ambienceStarted) {
-            this.audio.startAmbience();
-        }
-        this.handleTouchMove(e);
-    }
-
-    handleTouchMove(e) {
-        e.preventDefault();
-        const rect = this.canvas.getBoundingClientRect();
-        const touch = e.touches[0];
-        const x = touch.clientX - rect.left;
-        const y = touch.clientY - rect.top;
-        this.updateHoverState(x, y);
-    }
-
-    handleTouchEnd(e) {
-        e.preventDefault();
-        const rect = this.canvas.getBoundingClientRect();
-        const touch = e.changedTouches[0];
-        const x = touch.clientX - rect.left;
-        const y = touch.clientY - rect.top;
-
-        // Clear hover state on release
-        this.edges.forEach(edge => edge.hovered = false);
-        this.canvas.style.cursor = 'default';
-
-        this.attemptInteraction(x, y);
-    }
-
-    updateHoverState(x, y) {
         let hovered = false;
         for (const edge of this.edges) {
             if (edge.isPointNearLine(x, y)) {
@@ -700,7 +755,18 @@ class Game {
         }
     }
 
-    attemptInteraction(x, y) {
+    handleClick(e) {
+        // Ensure audio context is running on first interaction
+        if (this.audio && !this.audio.ambienceStarted) {
+            this.audio.startAmbience();
+        }
+
+        const rect = this.canvas.getBoundingClientRect();
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+
         for (const edge of this.edges) {
             if (edge.active && edge.isPointNearLine(x, y)) {
                 const validation = this.canRemoveEdge(edge);
@@ -710,33 +776,28 @@ class Game {
                     this.updateStats();
                     this.checkWin();
                 } else {
-                    // Visual feedback for invalid move (shake/flash)
                     console.log("Cannot remove:", validation.reason);
                     this.audio.playError();
                     this.showToast(validation.reason);
-
                     this.lives--;
                     this.updateLivesUI();
-
-                    if (this.lives <= 0) {
-                        this.gameOver();
-                    }
+                    this.checkGameOver();
                 }
                 break;
             }
         }
     }
 
-    gameOver() {
-        this.ui.messageArea.classList.remove('hidden');
-        document.getElementById('message-title').textContent = ">> SYSTEM_FAILURE";
-        document.getElementById('message-desc').textContent = "CRITICAL_ERROR: TOO_MANY_FAULTS";
-        this.ui.nextBtn.textContent = "[ REBOOT_SYSTEM ]";
+    canRemoveEdge(edgeToRemove) {
+        const activeEdges = this.edges.filter(e => e.active);
 
-        // Set next button behavior for this state
-        this.ui.nextBtn.onclick = () => {
-            this.restartLevel();
-        };
+        for (const constraint of this.constraints) {
+            const result = constraint.validate(this.nodes, activeEdges, edgeToRemove);
+            if (!result.valid) {
+                return result;
+            }
+        }
+        return { valid: true };
     }
 
     showToast(message) {
@@ -745,26 +806,36 @@ class Game {
         toast.className = 'toast';
         toast.textContent = message;
         container.appendChild(toast);
-
-        // Remove after animation
-        setTimeout(() => {
-            toast.remove();
-        }, 3000);
-    }
-
-    canRemoveEdge(edgeToRemove) {
-        for (const constraint of this.constraints) {
-            const result = constraint.validate(this, edgeToRemove);
-            if (!result.valid) {
-                return result;
-            }
-        }
-        return { valid: true };
+        setTimeout(() => toast.remove(), 3000);
     }
 
     checkWin() {
         if (this.complexity <= this.targetComplexity) {
             this.ui.messageArea.classList.remove('hidden');
+            document.getElementById('message-title').textContent = ">> SEQUENCE_COMPLETE";
+            document.getElementById('message-desc').textContent = "CONNECTION_ESTABLISHED";
+            this.ui.nextBtn.classList.remove('hidden');
+        }
+    }
+
+    checkGameOver() {
+        if (this.lives <= 0) {
+            this.ui.messageArea.classList.remove('hidden');
+            document.getElementById('message-title').textContent = ">> SYSTEM_FAILURE";
+            document.getElementById('message-desc').textContent = "SIGNAL_LOST. REBOOT_REQUIRED.";
+            this.ui.nextBtn.classList.add('hidden');
+        }
+    }
+
+    updateLivesUI() {
+        this.ui.livesContainer.innerHTML = '';
+        for (let i = 0; i < 3; i++) {
+            const hex = document.createElement('div');
+            hex.className = 'life-hex';
+            if (i >= this.lives) {
+                hex.classList.add('lost');
+            }
+            this.ui.livesContainer.appendChild(hex);
         }
     }
 
@@ -791,15 +862,18 @@ class Game {
             this.ctx.stroke();
         }
         this.ctx.restore();
-
-        // Draw Edges first (behind nodes)
         this.edges.forEach(edge => edge.draw(this.ctx));
-
-        // Draw Nodes
         this.nodes.forEach(node => node.draw(this.ctx));
-
         requestAnimationFrame(() => this.loop());
     }
 }
 
-new Game();
+window.addEventListener('load', () => {
+    console.log("Window loaded, initializing Game...");
+    try {
+        new Game();
+        console.log("Game initialized successfully");
+    } catch (e) {
+        console.error("Game initialization failed:", e);
+    }
+});
